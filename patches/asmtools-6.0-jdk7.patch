@@ -1,0 +1,338 @@
+diff -r f201bb903e32 build/build.xml
+--- a/build/build.xml	Wed Mar 02 14:00:55 2016 -0700
++++ b/build/build.xml	Sun Apr 15 21:24:11 2018 +0200
+@@ -246,8 +246,8 @@
+     <target name="compileClasses" depends="prepare">
+         <mkdir dir="${build.classes.dir}"/>
+         <javac fork="true"
+-            target="1.8"
+-            source="1.8"
++            target="1.7"
++            source="1.7"
+             srcdir="${build.src.classes.dir}"
+             destdir="${build.classes.dir}"
+             debug="${javac.debug}"
+diff -r f201bb903e32 src/org/openjdk/asmtools/jasm/ModuleAttr.java
+--- a/src/org/openjdk/asmtools/jasm/ModuleAttr.java	Wed Mar 02 14:00:55 2016 -0700
++++ b/src/org/openjdk/asmtools/jasm/ModuleAttr.java	Sun Apr 15 21:24:11 2018 +0200
+@@ -161,7 +161,10 @@
+ 
+       @Override
+       public int hashCode() {
++        /*
+         return mn.hashCode() * 11 + Boolean.hashCode(reexports);
++        */
++        return mn.hashCode() * 11 + Boolean.valueOf(reexports).hashCode();
+       }
+ 
+       @Override
+@@ -201,7 +204,7 @@
+         Objects.requireNonNull(p);
+         Objects.requireNonNull(ms);
+         if (!exports.containsKey(p))
+-          exports.put(p, new HashSet<>());
++          exports.put(p, new HashSet<String>());
+         exports.get(p).addAll(ms);
+         return this;
+       }
+@@ -212,7 +215,16 @@
+       }
+ 
+       public Builder provide(String s, String impl) {
++        /*
+         provides.computeIfAbsent(s, _k -> new HashSet<>()).add(impl);
++        */
++        Set<String> value = provides.get(s);
++        if (value == null) {
++            value = new HashSet<String>();
++            provides.put(s, value);
++        }
++        value.add(impl);
++
+         return this;
+       }
+ 
+@@ -246,11 +258,19 @@
+     List<Pair<ConstantPool.ConstCell, Integer>> list = new ArrayList<>();
+ 
+     public RequiresStruct() {
++      /*
+       buildModuleIfAbsent().requires.forEach(
+           r -> list.add(
+               new Pair<>(clsData.pool.FindCellAsciz(r.name()),
+                   r.isReexports() ? ACC_REEXPORT : ACC_NONE))
+       );
++      */
++      for (Module.Dependence r : buildModuleIfAbsent().requires) {
++          list.add(
++              new Pair<>(clsData.pool.FindCellAsciz(r.name()),
++                  r.isReexports() ? ACC_REEXPORT : ACC_NONE));
++
++      }
+     }
+ 
+     @Override
+@@ -279,6 +299,7 @@
+     ExportsStruct() {
+       Objects.requireNonNull(module);
+       //(un)qualified module exports
++      /*
+       buildModuleIfAbsent().exports.entrySet().stream()
+           .sorted(Map.Entry.comparingByKey())
+           .forEach(e -> {
+@@ -287,11 +308,42 @@
+                 exports.add(new Pair<>(clsData.pool.FindCellAsciz(e.getKey()), to));
+               }
+           );
++      */
++      class EntryKeyComparator<T extends Map.Entry<? extends Comparable,?>> implements Comparator<T> {
++
++          public int compare(T o1, T o2) {
++              return o1.getKey().compareTo(o2.getKey());
++          }
++      }
++
++      List<Map.Entry<String, Set<String>>> exportsList =
++        new ArrayList<Map.Entry<String, Set<String>>>();
++      exportsList.addAll(buildModuleIfAbsent().exports.entrySet());
++      EntryKeyComparator<Map.Entry<String,Set<String>>> exportsComparator
++        = new EntryKeyComparator<Map.Entry<String,Set<String>>>();
++      Collections.sort(exportsList, exportsComparator);
++      for (Map.Entry<String, Set<String>> e : exportsList) {
++          ArrayList<ConstantPool.ConstCell> to = new ArrayList<>();
++          for(String mn : e.getValue()) {
++              to.add(clsData.pool.FindCellAsciz(mn));
++          }
++          exports.add(new Pair<ConstantPool.ConstCell, List<ConstantPool.ConstCell>>(clsData.pool.FindCellAsciz(e.getKey()), to));
++      }
+     }
+ 
+     @Override
+     public int getLength() {
++      /*
+       return 2 + 4 * exports.size() + exports.stream().mapToInt(p->p.second.size()).filter(s->s>0).sum() * 2;
++      */
++      int sum = 0;
++      for (Pair<ConstantPool.ConstCell, List<ConstantPool.ConstCell>> p : exports) {
++          int s = p.second.size();
++          if (s > 0) {
++              sum += s;
++          }
++      }
++      return 2 + 4 * exports.size() + sum * 2;
+     }
+ 
+     @Override
+@@ -315,7 +367,15 @@
+     final List<ConstantPool.ConstCell> uses = new ArrayList<>();
+ 
+     UsesStruct() {
++      /*
+       buildModuleIfAbsent().uses.stream().sorted().forEach(u -> uses.add(clsData.pool.FindCellAsciz(u)));
++      */
++      List<String> usesList = new ArrayList<String>();
++      usesList.addAll(buildModuleIfAbsent().uses);
++      Collections.sort(usesList);
++      for (String u : usesList) {
++          uses.add(clsData.pool.FindCellAsciz(u));
++      }
+     }
+ 
+     @Override
+@@ -341,6 +401,7 @@
+     List<Pair<ConstantPool.ConstCell, ConstantPool.ConstCell>> list = new ArrayList<>();
+ 
+     protected ProvidesStruct() {
++      /*
+       buildModuleIfAbsent().provides.entrySet().stream()
+           .sorted(Map.Entry.comparingByKey())
+           .forEach(e -> e.getValue().stream()
+@@ -348,6 +409,29 @@
+               .forEach(impl -> list.add(new Pair<>(
+                   clsData.pool.FindCellAsciz(e.getKey()), clsData.pool.FindCellAsciz(impl))
+               )));
++      */
++      class EntryKeyComparator<T extends Map.Entry<? extends Comparable,?>> implements Comparator<T> {
++
++          public int compare(T o1, T o2) {
++              return o1.getKey().compareTo(o2.getKey());
++          }
++      }
++
++      List<Map.Entry<String, Set<String>>> providesList =
++        new ArrayList<Map.Entry<String, Set<String>>>();
++      providesList.addAll(buildModuleIfAbsent().provides.entrySet());
++      EntryKeyComparator<Map.Entry<String, Set<String>>> providesComparator
++        = new EntryKeyComparator<Map.Entry<String, Set<String>>>();
++      Collections.sort(providesList, providesComparator);
++      for(Map.Entry<String, Set<String>> e : providesList) {
++          List<String> valuesList = new ArrayList<String>();
++          valuesList.addAll(e.getValue());
++          Collections.sort(valuesList);
++          for (String impl : valuesList) {
++              list.add(new Pair<>(
++                  clsData.pool.FindCellAsciz(e.getKey()), clsData.pool.FindCellAsciz(impl)));
++          }
++      }
+     }
+ 
+     @Override
+diff -r f201bb903e32 src/org/openjdk/asmtools/jdis/ModuleData.java
+--- a/src/org/openjdk/asmtools/jdis/ModuleData.java	Wed Mar 02 14:00:55 2016 -0700
++++ b/src/org/openjdk/asmtools/jdis/ModuleData.java	Sun Apr 15 21:24:11 2018 +0200
+@@ -28,7 +28,9 @@
+ import java.io.IOException;
+ import java.io.PrintWriter;
+ import java.util.*;
++/*
+ import java.util.stream.Collectors;
++*/
+ 
+ import static java.lang.String.format;
+ 
+@@ -162,15 +164,48 @@
+     @Override
+     public String toString() {
+       StringBuilder sb = new StringBuilder();
++
++      class EntryKeyComparator<T extends Map.Entry<? extends Comparable,?>> implements Comparator<T> {
++
++          public int compare(T o1, T o2) {
++              return o1.getKey().compareTo(o2.getKey());
++          }
++      }
++
++      /*
+       requires.stream()
+           .sorted()
+           .forEach(d -> sb.append(format("  %s%n", d.toString())));
+-      //
++      */
++      List<Dependence> requiresList = new ArrayList<Dependence>();
++      requiresList.addAll(requires);
++      Collections.sort(requiresList);
++      for (Dependence d : requiresList) {
++          sb.append(format("  %s%n", d.toString()));
++      }
++
++      /*
+       exports.entrySet().stream()
+           .filter(e -> e.getValue().isEmpty())
+           .sorted(Map.Entry.comparingByKey())
+           .map(e -> format("  exports %s;%n", e.getKey()))
+           .forEach(sb::append);
++      */
++      List<Map.Entry<String, Set<String>>> exportsList1 =
++        new ArrayList<Map.Entry<String, Set<String>>>();
++      for (Map.Entry<String, Set<String>> e : exports.entrySet()) {
++          if (e.getValue().isEmpty()) {
++              exportsList1.add(e);
++          }
++      }
++      EntryKeyComparator<Map.Entry<String, Set<String>>> exportsComparator1
++        = new EntryKeyComparator<Map.Entry<String, Set<String>>>();
++      Collections.sort(exportsList1, exportsComparator1);
++      for (Map.Entry<String, Set<String>> e : exportsList1) {
++          sb.append(format("  exports %s;%n", e.getKey()));
++      }
++
++      /*
+       exports.entrySet().stream()
+           .filter(e -> !e.getValue().isEmpty())
+           .sorted(Map.Entry.comparingByKey())
+@@ -179,16 +214,67 @@
+                   .map(mn -> format("      %s", mn))
+                   .collect(Collectors.joining(",\n"))))
+           .forEach(sb::append);
+-      //
++      */
++      List<Map.Entry<String, Set<String>>> exportsList2 =
++        new ArrayList<Map.Entry<String, Set<String>>>();
++      for (Map.Entry<String, Set<String>> e : exports.entrySet()) {
++          if (!e.getValue().isEmpty()) {
++              exportsList2.add(e);
++          }
++      }
++      EntryKeyComparator<Map.Entry<String, Set<String>>> exportsComparator2
++        = new EntryKeyComparator<Map.Entry<String, Set<String>>>();
++      Collections.sort(exportsList2, exportsComparator2);
++      for (Map.Entry<String, Set<String>> e : exportsList2) {
++          List<String> valuesList = new ArrayList<String>();
++          valuesList.addAll(e.getValue());
++          Collections.sort(valuesList);
++          StringBuilder sb2 = new StringBuilder();
++          boolean firstVal = true;
++          for(String mn : valuesList) {
++              if (!firstVal) {
++                  sb2.append(",\n");
++              }
++              sb2.append(format("      %s", mn));
++              firstVal = false;
++          }
++          sb.append(format("  exports %s to%n%s;%n",
++              e.getKey(), sb2.toString()));
++      }
++
++      /*
+       uses.stream().sorted()
+           .map(s -> format("  uses %s;%n", s))
+           .forEach(sb::append);
+-      //
++      */
++      List<String> usesList = new ArrayList<String>();
++      usesList.addAll(uses);
++      Collections.sort(usesList);
++      for (String s : usesList) {
++          sb.append(format("  uses %s;%n", s));
++      }
++
++      /*
+       provides.entrySet().stream()
+           .sorted(Map.Entry.comparingByKey())
+           .flatMap(e -> e.getValue().stream().sorted()
+               .map(impl -> format("  provides %s with %s;%n", e.getKey(), impl)))
+           .forEach(sb::append);
++      */
++      List<Map.Entry<String, Set<String>>> providesList =
++        new ArrayList<Map.Entry<String, Set<String>>>();
++      providesList.addAll(provides.entrySet());
++      EntryKeyComparator<Map.Entry<String, Set<String>>> providesComparator
++        = new EntryKeyComparator<Map.Entry<String, Set<String>>>();
++      Collections.sort(providesList, providesComparator);
++      for (Map.Entry<String, Set<String>> e : providesList) {
++          List<String> valuesList = new ArrayList<String>();
++          valuesList.addAll(e.getValue());
++          Collections.sort(valuesList);
++          for (String impl : valuesList) {
++              sb.append(format("  provides %s with %s;%n", e.getKey(), impl));
++          }
++      }
+       return sb.toString();
+     }
+ 
+@@ -280,7 +366,7 @@
+        */
+       public Builder export(String p) {
+         Objects.requireNonNull(p);
+-        if (!exports.containsKey(p)) exports.put(p, new HashSet<>());
++        if (!exports.containsKey(p)) exports.put(p, new HashSet<String>());
+         return this;
+       }
+ 
+@@ -308,7 +394,16 @@
+        * Adds a service that a module provides one or more implementations of.
+        */
+       public Builder provide(String s, Set<String> impl) {
++        /*
+         provides.computeIfAbsent(s, _k -> new HashSet<>()).addAll(impl);
++        */
++        Set<String> value = provides.get(s);
++        if (value == null) {
++            value = new HashSet<String>();
++            provides.put(s, value);
++        }
++        value.addAll(impl);
++
+         return this;
+       }
+ 
