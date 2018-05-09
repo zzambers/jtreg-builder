@@ -25,7 +25,8 @@ CODE_TOOLS_URL=http://hg.openjdk.java.net/code-tools
 PATCHES_DIR=$(TOP_DIR)/patches
 
 JTREG_TAG=tip
-JTREG_DL_URL=$(CODE_TOOLS_URL)/jtreg/archive/${JTREG_TAG}.zip
+JTREG_REPO_URL=$(CODE_TOOLS_URL)/jtreg
+#JTREG_DL_URL=$(JTREG_REPO_URL)/archive/${JTREG_TAG}.zip
 JTREG_SRC_DIR=$(SRC_DIR)/jtreg
 JTREG_DIST_DIR=$(JTREG_SRC_DIR)/build
 
@@ -209,10 +210,12 @@ $(JCOMMANDER_DIST_DIR): | $(JCOMMANDER_SRC_DIR) $(ANT_DIST_DIR)
 
 $(JTREG_SRC_DIR): | $(SRC_DIR)
 	cd "$(SRC_DIR)" && \
-	curl -L -f "$(JTREG_DL_URL)" > "$(SRC_DIR)/jtreg.zip" && \
-	unzip jtreg.zip && \
-	rm jtreg.zip && \
-	mv jtreg* jtreg
+	hg clone -r "$(JTREG_TAG)" "$(JTREG_REPO_URL)"
+#	cd "$(SRC_DIR)" && \
+#	curl -L -f "$(JTREG_DL_URL)" > "$(SRC_DIR)/jtreg.zip" && \
+#	unzip jtreg.zip && \
+#	rm jtreg.zip && \
+#	mv jtreg* jtreg
 
 $(JTREG_DIST_DIR): | $(JTREG_SRC_DIR) $(JUNIT_DIST_DIR) $(TESTNG_DIST_DIR) \
     $(JCOMMANDER_DIST_DIR) $(ANT_DIST_DIR) $(JCOV_DIST_DIR) \
